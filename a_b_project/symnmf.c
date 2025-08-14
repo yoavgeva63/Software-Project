@@ -8,16 +8,27 @@ typedef struct {
     double **H, **Hprev, **HT, **HHT, **WH, **HHTH;
 } SymnmfMatrices;
 
-/* Forward declarations for static helpers */
+/* mm
+ * Matrix multiply: C = A (r×m) · B (m×c).
+ * No allocation; assumes C is preallocated r×c.
+ */
 static void mm(int r, int m, int c, double **A, double **B, double **C);
 static int run_goal(int goal, int n, double **A);
 static int parse_goal(const char *g_str);
 
+/* error
+ * Prints unified error message to stderr.
+ * Returns NULL.
+ */
 void* error(void) {
     fprintf(stderr, "An Error Has Occurred\n");
     return NULL;
 }
 
+/* free_matrix
+ * Frees a 2D matrix allocated as an array of row pointers (size rows).
+ * Safe on NULL; frees each row then the pointer array.
+ */
 void free_matrix(double **m, int rows) {
     int i;
     if (!m) return;
@@ -25,6 +36,10 @@ void free_matrix(double **m, int rows) {
     free(m);
 }
 
+/* alloc_mat
+ * Allocates a rows×cols double matrix (zero-initialized rows).
+ * On failure prints error and returns NULL.
+ */
 static double** alloc_mat(int rows, int cols) {
     int i;
     double **M = (double**)malloc(rows * sizeof(double*));
@@ -36,6 +51,10 @@ static double** alloc_mat(int rows, int cols) {
     return M;
 }
 
+/* l2sq
+ * Returns squared Euclidean distance ||a-b||^2 for vectors of length d.
+ * No side effects.
+ */
 static double l2sq(const double *a, const double *b, int d) {
     int i;
     double s = 0.0, t;
@@ -43,10 +62,17 @@ static double l2sq(const double *a, const double *b, int d) {
     return s;
 }
 
+/* sim
+ * Similarity with sigma^2 = 1: exp(-0.5 * ||a-b||^2).
+ * Used to build the similarity matrix (zero diagonal handled in caller).
+ */
 static double sim(const double *a, const double *b, int d) {
     return exp(-0.5 * l2sq(a, b, d));
 }
 
+/* mm
+ * Matrix multiply: C = A (r×m) · B (m×c).
+ */
 static void mm(int r, int m, int c, double **A, double **B, double **C) {
     int i, j, k;
     for (i = 0; i < r; i++) {
@@ -58,11 +84,19 @@ static void mm(int r, int m, int c, double **A, double **B, double **C) {
     }
 }
 
+/* tr
+ * Transpose: AT = A^T, where A is r×c and AT is c×r.
+ * Assumes AT is preallocated.
+ */
 static void tr(int r, int c, double **A, double **AT) {
     int i, j;
     for (i = 0; i < r; i++) for (j = 0; j < c; j++) AT[j][i] = A[i][j];
 }
 
+/* f_diff_sq
+ * Frobenius squared difference: sum_{i,j} (A_ij - B_ij)^2 over r×c.
+ * Used for convergence check.
+ */
 static double f_diff_sq(double **A, double **B, int r, int c) {
     int i, j;
     double s = 0.0, d;
@@ -70,15 +104,26 @@ static double f_diff_sq(double **A, double **B, int r, int c) {
     return s;
 }
 
+/* sym
+ * Builds similarity matrix A (n×n) from data (n×d) using sim(); diagonal = 0.
+ * Returns newly allocated A or NULL on failure.
+ */
 double** sym(double **data, int n, int d) {
     int i, j;
     double **A = alloc_mat(n, n);
     if (!A) return NULL;
-    for (i = 0; i < n; i++) for (j = 0; j < n; j++)
-        A[i][j] = (i == j) ? 0.0 : sim(data[i], data[j], d);
+    for (i = 0; i < n; i++) {
+        for (j = 0; j < n; j++) {
+            A[i][j] = (i == j) ? 0.0 : sim(data[i], data[j], d);
+        }
+    }
     return A;
 }
 
+/* ddg
+ * Degree matrix D (n×n): D_ii = sum_j A_ij, off-diagonal zeros.
+ * Returns newly allocated D or NULL on failure.
+ */
 double** ddg(double **A, int n) {
     int i, j;
     double **D = alloc_mat(n, n);
@@ -91,6 +136,10 @@ double** ddg(double **A, int n) {
     return D;
 }
 
+/* norm
+ * Normalized matrix W = D^{-1/2} A D^{-1/2}.
+ * Skips entries where D_ii or D_jj is zero.
+ */
 double** norm(double **A, double **D, int n) {
     int i, j;
     double **W = alloc_mat(n, n);
@@ -103,11 +152,18 @@ double** norm(double **A, double **D, int n) {
     return W;
 }
 
+/* copy_mat
+ * Copies src (r×c) into dst (r×c) row-by-row using memcpy.
+ * Assumes same shapes and allocated memory.
+ */
 static void copy_mat(double **dst, double **src, int r, int c) {
     int i;
     for (i = 0; i < r; i++) memcpy(dst[i], src[i], c * sizeof(double));
 }
 
+/* update_step
+ * H ← H ⊙ [(1-β) + β · (W H) / ((H H^T) H)].
+ */
 static void update_step(SymnmfMatrices *m, double **W, int n, int k) {
     const double beta = 0.5;
     int i, j;
@@ -125,6 +181,10 @@ static void update_step(SymnmfMatrices *m, double **W, int n, int k) {
     }
 }
 
+/* alloc_symnmf_matrices
+ * Allocates all working matrices for SymNMF iterations (and the struct).
+ * On partial failure frees what was allocated and returns NULL.
+ */
 static SymnmfMatrices* alloc_symnmf_matrices(int n, int k) {
     SymnmfMatrices *mats = malloc(sizeof(SymnmfMatrices));
     if (!mats) { error(); return NULL; }
@@ -143,6 +203,10 @@ static SymnmfMatrices* alloc_symnmf_matrices(int n, int k) {
     return mats;
 }
 
+/* symnmf
+ * Runs SymNMF on W with initial H0; stops at maxIter or when ||H-Hprev||_F^2 < eps.
+ * Returns the final H; frees temporaries but not H (owned by caller).
+ */
 double** symnmf(double **W, double **H0, int n, int k, int maxIter, double eps) {
     int t;
     double **result_H;
@@ -160,8 +224,10 @@ double** symnmf(double **W, double **H0, int n, int k, int maxIter, double eps) 
     return result_H;
 }
 
-/* ================== Standalone C Executable Logic =================== */
-
+/* read_line
+ * Reads one line (no newline) from fp into *buf (growable); updates *cap.
+ * Returns length of line, or -1 on EOF with no data or allocation failure.
+ */
 static int read_line(FILE *fp, char **buf, size_t *cap) {
     size_t len = 0; int ch;
     if (!*buf || *cap == 0) {*cap=128; *buf=malloc(*cap); if(!*buf)return -1;}
@@ -177,6 +243,10 @@ static int read_line(FILE *fp, char **buf, size_t *cap) {
     return (len == 0 && ch == EOF) ? -1 : (int)len;
 }
 
+/* count_shape
+ * Peeks the first line to count columns (by commas) and counts total rows.
+ * Seeks back to file start; returns 1 on success and fills outRows/outCols.
+ */
 static int count_shape(FILE *fp, int *outRows, int *outCols) {
     char *line = NULL; size_t cap = 0; int len, rows = 0, cols = 0, i;
     if ((len = read_line(fp, &line, &cap)) < 0) { free(line); return 0; }
@@ -189,6 +259,10 @@ static int count_shape(FILE *fp, int *outRows, int *outCols) {
     return 1;
 }
 
+/* load_csv
+ * Loads a CSV of doubles into an n×d matrix X; detects shape first.
+ * Returns allocated X; on error prints and returns NULL.
+ */
 static double** load_csv(const char *path, int *outRows, int *outCols) {
     FILE *fp = fopen(path, "r");
     char *line = NULL, *p, *end; size_t cap = 0;
@@ -210,6 +284,10 @@ static double** load_csv(const char *path, int *outRows, int *outCols) {
     return X;
 }
 
+/* print_matrix
+ * Prints rows×cols matrix with 4 decimal places, comma-separated rows.
+ * Appends newline after each row.
+ */
 static void print_matrix(double **M, int rows, int cols) {
     int i, j;
     for (i = 0; i < rows; i++) {
@@ -219,6 +297,10 @@ static void print_matrix(double **M, int rows, int cols) {
     }
 }
 
+/* parse_goal
+ * Parses goal string into enum-like int: sym=0, ddg=1, norm=2, else -1.
+ * Used by the CLI in main().
+ */
 static int parse_goal(const char *g_str) {
     if (strcmp(g_str, "sym") == 0) return 0;
     if (strcmp(g_str, "ddg") == 0) return 1;
@@ -226,6 +308,10 @@ static int parse_goal(const char *g_str) {
     return -1;
 }
 
+/* run_goal
+ * Executes the chosen goal: print A, D=ddg(A), or W=norm(A,D); returns 1/0.
+ * Frees intermediates where appropriate.
+ */
 static int run_goal(int goal, int n, double **A) {
     double **D, **W;
     if (goal == 0) { print_matrix(A, n, n); return 1; }
@@ -240,6 +326,10 @@ static int run_goal(int goal, int n, double **A) {
     return 1;
 }
 
+/* main
+ * Minimal CLI for the C executable: goal (sym|ddg|norm) and input path.
+ * Loads CSV → X, builds A=sym(X), runs goal, prints result, returns 0/1.
+ */
 int main(int argc, char **argv) {
     int goal, n = 0, d = 0, res = 1; /* FIX: Initialize n,d */
     double **X, **A;

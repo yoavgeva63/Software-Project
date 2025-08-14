@@ -2,12 +2,23 @@
 #include <Python.h>
 #include "symnmf.h"
 
-/* ============================= Helper Functions ============================= */
+/* ============================= Helper Functions =============================
+ * py_error
+ * Purpose: set a Python RuntimeError with the unified message.
+ * Returns: NULL (so callers can `return py_error();` in error paths).
+ */
 static PyObject* py_error(void) {
     PyErr_SetString(PyExc_RuntimeError, "An Error Has Occurred");
     return NULL;
 }
 
+/* py_to_c_matrix
+ * Purpose: Convert a Python list-of-lists (rows) into a newly malloc'ed
+ *          C double** matrix; validates rectangularity.
+ * On success: writes matrix pointer, rows, cols into out-params and returns 1.
+ * On failure: frees any partial allocation and returns 0 (no Python error set).
+ * Ownership: caller must free with free_matrix(c_matrix, rows).
+ */
 static int py_to_c_matrix(PyObject *py_matrix, double ***c_matrix_ptr, int *rows_ptr, int *cols_ptr) {
     Py_ssize_t i, j, rows, cols;
     double **c_matrix;
@@ -35,6 +46,11 @@ static int py_to_c_matrix(PyObject *py_matrix, double ***c_matrix_ptr, int *rows
     return 1;
 }
 
+/* c_to_py_matrix
+ * Purpose: Convert a C double** matrix (rows×cols) into a Python list-of-lists.
+ * Errors: returns NULL (with Python exception set) if allocation fails.
+ * Ownership: caller keeps/frees the C matrix; this function only builds Python.
+ */
 static PyObject* c_to_py_matrix(double **c_matrix, int rows, int cols) {
     Py_ssize_t i, j;
     PyObject *py_list = PyList_New(rows);
@@ -50,8 +66,12 @@ static PyObject* c_to_py_matrix(double **c_matrix, int rows, int cols) {
     return py_list;
 }
 
-/* ========================== Python Wrapper Functions ======================== */
-
+/* ========================== Python Wrapper Functions ========================
+ * py_sym
+ * Args: data (list[list[float]]) with shape n×d.
+ * Does: calls C sym() to compute A (n×n); converts to Python; frees C buffers.
+ * Returns: Python list-of-lists A, or raises RuntimeError on failure.
+ */
 static PyObject* py_sym(PyObject *self, PyObject *args) {
     PyObject *py_data, *py_res;
     double **data, **A;
@@ -66,6 +86,11 @@ static PyObject* py_sym(PyObject *self, PyObject *args) {
     return py_res;
 }
 
+/* py_ddg
+ * Args: A (n×n) similarity matrix as list-of-lists.
+ * Does: validates square; calls C ddg(A); returns D (n×n) as Python.
+ * Errors: raises RuntimeError on invalid shape or allocation failure.
+ */
 static PyObject* py_ddg(PyObject *self, PyObject *args) {
     PyObject *py_A, *py_res;
     double **A = NULL, **D;
@@ -83,6 +108,11 @@ static PyObject* py_ddg(PyObject *self, PyObject *args) {
     return py_res;
 }
 
+/* py_norm
+ * Args: A (n×n), D (n×n) as Python matrices.
+ * Does: validates both are square and same n; calls C norm(A,D); returns W.
+ * Errors: raises RuntimeError on invalid inputs or allocation failure.
+ */
 static PyObject* py_norm(PyObject *self, PyObject *args) {
     PyObject *py_A, *py_D, *py_res;
     double **A = NULL, **D = NULL, **W;
@@ -106,6 +136,11 @@ static PyObject* py_norm(PyObject *self, PyObject *args) {
     return py_res;
 }
 
+/* py_symnmf
+ * Args: W (n×n), H0 (n×k), maxIter (int), eps (float).
+ * Does: shape-checks; calls C symnmf(W,H0,n,k,maxIter,eps); returns H (n×k).
+ * Errors: raises RuntimeError on invalid shapes or allocation failure.
+ */
 static PyObject* py_symnmf(PyObject *self, PyObject *args) {
     PyObject *py_W, *py_H0, *py_res;
     double **W = NULL, **H0 = NULL, **H;
@@ -134,7 +169,9 @@ static PyObject* py_symnmf(PyObject *self, PyObject *args) {
     return py_res;
 }
 
-/* ========================== Module Registration =========================== */
+/* ========================== Module Registration ===========================
+ * Method table: maps Python names to C functions; docstrings are brief.
+ */
 static PyMethodDef SymNMFMethods[] = {
     {"sym", (PyCFunction)py_sym, METH_VARARGS, "Calculate similarity matrix A."},
     {"ddg", (PyCFunction)py_ddg, METH_VARARGS, "Calculate diagonal degree matrix D."},
@@ -143,10 +180,15 @@ static PyMethodDef SymNMFMethods[] = {
     {NULL, NULL, 0, NULL}
 };
 
+/* Module definition: name 'symnmf', brief module doc, no per-interpreter state. */
 static struct PyModuleDef symnmfmodule = {
     PyModuleDef_HEAD_INIT, "symnmf", "C extension for SymNMF", -1, SymNMFMethods
 };
 
+/* PyInit_symnmf
+ * Purpose: module initialization entry point for Python ≥3.
+ * Returns: new module object, or NULL on failure (exception set by CPython).
+ */
 PyMODINIT_FUNC PyInit_symnmf(void) {
     return PyModule_Create(&symnmfmodule);
 }

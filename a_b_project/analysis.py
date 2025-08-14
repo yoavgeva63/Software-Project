@@ -4,7 +4,7 @@ from math import sqrt
 import symnmf as symnmf_c
 from kmeans import kmeans_algorithm
 
-# Constants from the PDF
+# Constants declaration
 MAX_ITER = 300
 EPS = 1e-4
 
@@ -20,7 +20,7 @@ def load_data(path):
     except Exception:
         error()
 
-# Helper functions moved from symnmf.py for better code structure
+# Helper functions
 def avg_value_matrix(M):
     """Average of all entries in a matrix M."""
     return np.mean(M)
@@ -28,13 +28,13 @@ def avg_value_matrix(M):
 def init_H(k, n, avgW, seed=1234):
     """
     Random nonnegative H0 (n×k) with entries ~ U[0, 2*sqrt(avgW/k)].
-    Uses a fixed seed for reproducibility.
+    Uses a fixed seed as demanded.
     """
     np.random.seed(seed)
     scale = 2 * np.sqrt(avgW / k)
     return np.random.uniform(0, scale, size=(n, k)).tolist()
 
-# Manual implementation of silhouette_score as required
+# Implementation of silhouette_score
 def pairwise_distances(data):
     """Return full n×n Euclidean distance matrix."""
     n = data.shape[0]
@@ -143,11 +143,11 @@ def main():
     nmf_labs = symnmf_labels(data, k)
     km_labs = kmeans_labels(data, k)
     
-    # Calculate silhouette scores using the manual implementation
+    # Calculate silhouette scores
     s_nmf = silhouette_score(data, nmf_labs)
     s_km = silhouette_score(data, np.array(km_labs))
     
-    # Print results as required
+    # Print results
     print(f"nmf: {s_nmf:.4f}")
     print(f"kmeans: {s_km:.4f}")
 

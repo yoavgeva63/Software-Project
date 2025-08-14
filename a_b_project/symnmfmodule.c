@@ -1,170 +1,186 @@
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
-#include <stdlib.h>
-#include <math.h>
-#include <string.h>
-#include "symnmf.h"  /* error(), free_matrix(), sym(), ddg(), norm(), symnmf() */
+#include "symnmf.h" /* error(), free_matrix(), sym(), ddg(), norm(), symnmf() */
 
 /* ============================= Helper functions ============================= */
 
 /* Print unified C error and set a Python exception; returns NULL for chaining. */
-static void* py_error(void) {
-    error();
+static PyObject* py_error(void) {
     PyErr_SetString(PyExc_RuntimeError, "An Error Has Occurred");
     return NULL;
 }
 
-/* Allocate C matrix rows×cols (double**). Frees partial on failure. */
-static double** alloc_c_matrix(int rows, int cols){
-    int i;
-    double **m = (double**)malloc(rows*sizeof(double*));
-    if(!m) return py_error();
-    for(i=0;i<rows;i++){
-        m[i]=(double*)malloc(cols*sizeof(double));
-        if(!m[i]){ free_matrix(m,i); return py_error(); }
-    }
-    return m;
-}
+/* Convert Python list-of-lists to a C double matrix. Returns 1 on success. */
+static int py_to_c_matrix(PyObject *py_matrix, double ***out_c_matrix, int *out_rows, int *out_cols) {
+    PyObject *row_obj, *cell_obj;
+    Py_ssize_t i, j, rows, cols;
+    double **c_matrix;
 
-/* Return 1 if Python object is int or float. */
-static int is_number(PyObject *o){
-    return PyFloat_Check(o) || PyLong_Check(o);
-}
+    if (!PyList_Check(py_matrix)) return 0;
+    rows = PyList_Size(py_matrix);
+    if (rows == 0) return 0;
 
-/* Validate list-of-lists of numbers; output shape in outRows/outCols. */
-static int extract_dimensions(PyObject *py, int *outRows, int *outCols){
-    Py_ssize_t rows, cols;
-    PyObject *row0, *r, *cell;
-    int i, j;
-    if(!PyList_Check(py)) return (py_error(), 0);
-    rows=PyList_Size(py); if(rows<=0) return (py_error(), 0);
-    row0=PyList_GetItem(py,0); if(!PyList_Check(row0)) return (py_error(), 0);
-    cols=PyList_Size(row0); if(cols<=0) return (py_error(), 0);
-    for(i=0;i<(int)rows;i++){
-        r=PyList_GetItem(py,i);
-        if(!PyList_Check(r) || PyList_Size(r)!=cols) return (py_error(), 0);
-        for(j=0;j<(int)cols;j++){ cell=PyList_GetItem(r,j); if(!is_number(cell)) return (py_error(), 0); }
-    }
-    *outRows=(int)rows; *outCols=(int)cols; return 1;
-}
+    row_obj = PyList_GetItem(py_matrix, 0);
+    if (!PyList_Check(row_obj)) return 0;
+    cols = PyList_Size(row_obj);
+    if (cols == 0) return 0;
 
-/* Convert Python list-of-lists -> C matrix; returns 1 on success. */
-static int py_to_c_matrix(PyObject *py, double ***outM, int *outR, int *outC){
-    int rows, cols, i, j;
-    double **m;
-    PyObject *row, *v;
-    if(!extract_dimensions(py,&rows,&cols)) return 0;
-    m=alloc_c_matrix(rows,cols); if(!m) return 0;
-    for(i=0;i<rows;i++){
-        row=PyList_GetItem(py,i);
-        for(j=0;j<cols;j++){
-            v=PyList_GetItem(row,j);
-            m[i][j]= PyFloat_Check(v)? PyFloat_AsDouble(v):(double)PyLong_AsLongLong(v);
-            if(PyErr_Occurred()){ free_matrix(m,rows); py_error(); return 0; }
+    c_matrix = (double**)malloc(rows * sizeof(double*));
+    if (!c_matrix) return 0;
+
+    for (i = 0; i < rows; i++) {
+        row_obj = PyList_GetItem(py_matrix, i);
+        if (!PyList_Check(row_obj) || PyList_Size(row_obj) != cols) {
+            free_matrix(c_matrix, i); return 0;
+        }
+        c_matrix[i] = (double*)malloc(cols * sizeof(double));
+        if (!c_matrix[i]) {
+            free_matrix(c_matrix, i); return 0;
+        }
+        for (j = 0; j < cols; j++) {
+            cell_obj = PyList_GetItem(row_obj, j);
+            c_matrix[i][j] = PyFloat_AsDouble(cell_obj);
         }
     }
-    *outM=m; *outR=rows; *outC=cols; return 1;
+
+    *out_c_matrix = c_matrix;
+    *out_rows = rows;
+    *out_cols = cols;
+    return 1;
 }
 
-/* Convert C matrix -> Python list-of-lists of floats. */
-static PyObject* c_to_py_matrix(double **m, int rows, int cols){
-    int i, j;
-    PyObject *pyRows, *pyRow, *num;
-    pyRows=PyList_New(rows); if(!pyRows) return py_error();
-    for(i=0;i<rows;i++){
-        pyRow=PyList_New(cols); if(!pyRow){ Py_DECREF(pyRows); return py_error(); }
-        for(j=0;j<cols;j++){
-            num=PyFloat_FromDouble(m[i][j]);
-            if(!num){ Py_DECREF(pyRow); Py_DECREF(pyRows); return py_error(); }
-            PyList_SET_ITEM(pyRow,j,num);
+/* Convert C matrix to Python list-of-lists. */
+static PyObject* c_to_py_matrix(double **c_matrix, int rows, int cols) {
+    PyObject *py_list = PyList_New(rows);
+    Py_ssize_t i, j;
+    if (!py_list) return NULL;
+
+    for (i = 0; i < rows; i++) {
+        PyObject *py_row = PyList_New(cols);
+        if (!py_row) { Py_DECREF(py_list); return NULL; }
+        for (j = 0; j < cols; j++) {
+            PyList_SET_ITEM(py_row, j, PyFloat_FromDouble(c_matrix[i][j]));
         }
-        PyList_SET_ITEM(pyRows,i,pyRow);
+        PyList_SET_ITEM(py_list, i, py_row);
     }
-    return pyRows;
+    return py_list;
 }
 
 /* ============================= Python wrappers ============================= */
 
 /* sym(data) -> similarity matrix */
-static PyObject* py_sym(PyObject *self, PyObject *args){
-    PyObject *pyData, *pyRes;
+static PyObject* py_sym(PyObject *self, PyObject *args) {
+    PyObject *py_data, *py_res;
     double **data, **A;
     int n, d;
-    pyData=NULL; pyRes=NULL; data=NULL; A=NULL; n=0; d=0;
-    if(!PyArg_ParseTuple(args,"O",&pyData)) return py_error();
-    if(!py_to_c_matrix(pyData,&data,&n,&d)) return NULL;
-    A=sym(data,n,d); if(!A){ free_matrix(data,n); return py_error(); }
-    pyRes=c_to_py_matrix(A,n,n);
-    if(!pyRes){ free_matrix(A,n); free_matrix(data,n); return NULL; }
-    free_matrix(A,n); free_matrix(data,n); return pyRes;
+
+    if (!PyArg_ParseTuple(args, "O", &py_data)) return py_error();
+    if (!py_to_c_matrix(py_data, &data, &n, &d)) return py_error();
+
+    A = sym(data, n, d);
+    free_matrix(data, n);
+    if (!A) return py_error();
+    
+    py_res = c_to_py_matrix(A, n, n);
+    free_matrix(A, n);
+    return py_res;
 }
 
-/* ddg(data) -> diagonal degree matrix */
-static PyObject* py_ddg(PyObject *self, PyObject *args){
-    PyObject *pyData, *pyRes;
-    double **data, **A, **D;
-    int n, d;
-    pyData=NULL; pyRes=NULL; data=NULL; A=NULL; D=NULL; n=0; d=0;
-    if(!PyArg_ParseTuple(args,"O",&pyData)) return py_error();
-    if(!py_to_c_matrix(pyData,&data,&n,&d)) return NULL;
-    A=sym(data,n,d); if(!A){ free_matrix(data,n); return py_error(); }
-    D=ddg(A,n); if(!D){ free_matrix(A,n); free_matrix(data,n); return py_error(); }
-    pyRes=c_to_py_matrix(D,n,n);
-    if(!pyRes){ free_matrix(D,n); free_matrix(A,n); free_matrix(data,n); return NULL; }
-    free_matrix(D,n); free_matrix(A,n); free_matrix(data,n); return pyRes;
+/* ddg(A) -> diagonal degree matrix */
+static PyObject* py_ddg(PyObject *self, PyObject *args) {
+    PyObject *py_A, *py_res;
+    double **A, **D;
+    int n, n_cols;
+
+    if (!PyArg_ParseTuple(args, "O", &py_A)) return py_error();
+    if (!py_to_c_matrix(py_A, &A, &n, &n_cols) || n != n_cols) {
+        if (A) free_matrix(A, n);
+        return py_error();
+    }
+
+    D = ddg(A, n);
+    free_matrix(A, n);
+    if (!D) return py_error();
+
+    py_res = c_to_py_matrix(D, n, n);
+    free_matrix(D, n);
+    return py_res;
 }
 
-/* norm(data) -> normalized similarity matrix */
-static PyObject* py_norm(PyObject *self, PyObject *args){
-    PyObject *pyData, *pyRes;
-    double **data, **A, **D, **W;
-    int n, d;
-    pyData=NULL; pyRes=NULL; data=NULL; A=NULL; D=NULL; W=NULL; n=0; d=0;
-    if(!PyArg_ParseTuple(args,"O",&pyData)) return py_error();
-    if(!py_to_c_matrix(pyData,&data,&n,&d)) return NULL;
-    A=sym(data,n,d); if(!A){ free_matrix(data,n); return py_error(); }
-    D=ddg(A,n); if(!D){ free_matrix(A,n); free_matrix(data,n); return py_error(); }
-    W=norm(A,D,n); if(!W){ free_matrix(D,n); free_matrix(A,n); free_matrix(data,n); return py_error(); }
-    pyRes=c_to_py_matrix(W,n,n);
-    if(!pyRes){ free_matrix(W,n); free_matrix(D,n); free_matrix(A,n); free_matrix(data,n); return NULL; }
-    free_matrix(W,n); free_matrix(D,n); free_matrix(A,n); free_matrix(data,n); return pyRes;
+/* norm(A, D) -> normalized similarity matrix */
+static PyObject* py_norm(PyObject *self, PyObject *args) {
+    PyObject *py_A, *py_D, *py_res;
+    double **A, **D, **W;
+    int nA, nA_cols, nD, nD_cols;
+
+    if (!PyArg_ParseTuple(args, "OO", &py_A, &py_D)) return py_error();
+    if (!py_to_c_matrix(py_A, &A, &nA, &nA_cols) || nA != nA_cols) {
+        if(A) free_matrix(A, nA); return py_error();
+    }
+    if (!py_to_c_matrix(py_D, &D, &nD, &nD_cols) || nD != nD_cols || nA != nD) {
+        free_matrix(A, nA); if(D) free_matrix(D, nD); return py_error();
+    }
+    
+    W = norm(A, D, nA);
+    free_matrix(A, nA);
+    free_matrix(D, nD);
+    if (!W) return py_error();
+    
+    py_res = c_to_py_matrix(W, nA, nA);
+    free_matrix(W, nA);
+    return py_res;
 }
 
-/* symnmf(W_norm,H_init,max_iter,eps) -> factor matrix H */
-static PyObject* py_symnmf(PyObject *self, PyObject *args){
-    PyObject *pyW, *pyH0, *pyRes;
+/* symnmf(W_norm, H_init, max_iter, eps) -> factor matrix H */
+static PyObject* py_symnmf(PyObject *self, PyObject *args) {
+    PyObject *py_W, *py_H0, *py_res;
     double **W, **H0, **H;
-    int nWr, nWc, nHr, nHc, n, k, maxIter;
+    int n, k, maxIter;
+    int n_W_rows, n_W_cols, n_H0_rows, n_H0_cols;
     double eps;
-    pyW=NULL; pyH0=NULL; pyRes=NULL; W=NULL; H0=NULL; H=NULL;
-    nWr=0; nWc=0; nHr=0; nHc=0; n=0; k=0; maxIter=0; eps=0.0;
-    if(!PyArg_ParseTuple(args,"OOid",&pyW,&pyH0,&maxIter,&eps)) return py_error();
-    if(maxIter<=0 || eps<=0.0) return py_error();
-    if(!py_to_c_matrix(pyW,&W,&nWr,&nWc)) return NULL;
-    if(!py_to_c_matrix(pyH0,&H0,&nHr,&nHc)){ free_matrix(W,nWr); return NULL; }
-    if(nWr!=nWc || nWr!=nHr || nHc<=0){ free_matrix(H0,nHr); free_matrix(W,nWr); return py_error(); }
-    n=nWr; k=nHc;
-    H=symnmf(W,H0,n,k,maxIter,eps);
-    if(!H){ free_matrix(H0,nHr); free_matrix(W,n); return py_error(); }
-    pyRes=c_to_py_matrix(H,n,k);
-    if(!pyRes){ free_matrix(H,n); free_matrix(H0,nHr); free_matrix(W,n); return NULL; }
-    free_matrix(H,n); free_matrix(H0,nHr); free_matrix(W,n); return pyRes;
+
+    if (!PyArg_ParseTuple(args, "OOid", &py_W, &py_H0, &maxIter, &eps)) return py_error();
+    
+    if (!py_to_c_matrix(py_W, &W, &n_W_rows, &n_W_cols) || n_W_rows != n_W_cols) {
+        if(W) free_matrix(W, n_W_rows); return py_error();
+    }
+    if (!py_to_c_matrix(py_H0, &H0, &n_H0_rows, &n_H0_cols)) {
+        free_matrix(W, n_W_rows); return py_error();
+    }
+    if (n_W_rows != n_H0_rows) {
+        free_matrix(W, n_W_rows); free_matrix(H0, n_H0_rows); return py_error();
+    }
+    n = n_W_rows;
+    k = n_H0_cols;
+
+    H = symnmf(W, H0, n, k, maxIter, eps);
+    free_matrix(W, n);
+    free_matrix(H0, n);
+    if (!H) return py_error();
+
+    py_res = c_to_py_matrix(H, n, k);
+    free_matrix(H, n);
+    return py_res;
 }
 
 /* ============================= Module initialization ============================= */
 
 static PyMethodDef SymNMFMethods[] = {
     {"sym",    (PyCFunction)py_sym,    METH_VARARGS, "sym(data) -> similarity matrix"},
-    {"ddg",    (PyCFunction)py_ddg,    METH_VARARGS, "ddg(data) -> diagonal degree matrix"},
-    {"norm",   (PyCFunction)py_norm,   METH_VARARGS, "norm(data) -> normalized similarity matrix"},
-    {"symnmf", (PyCFunction)py_symnmf, METH_VARARGS, "symnmf(W_norm,H_init,max_iter,eps) -> factor matrix H"},
-    {NULL,NULL,0,NULL}
+    {"ddg",    (PyCFunction)py_ddg,    METH_VARARGS, "ddg(A) -> diagonal degree matrix"},
+    {"norm",   (PyCFunction)py_norm,   METH_VARARGS, "norm(A, D) -> normalized similarity matrix"},
+    {"symnmf", (PyCFunction)py_symnmf, METH_VARARGS, "symnmf(W, H0, max_iter, eps) -> factor matrix H"},
+    {NULL, NULL, 0, NULL}
 };
 
 static struct PyModuleDef symnmfmodule = {
-    PyModuleDef_HEAD_INIT, "symnmf", "C extension for SymNMF", -1, SymNMFMethods
+    PyModuleDef_HEAD_INIT,
+    "symnmf",
+    "C extension for SymNMF",
+    -1,
+    SymNMFMethods
 };
 
-PyMODINIT_FUNC PyInit_symnmf(void){
+PyMODINIT_FUNC PyInit_symnmf(void) {
     return PyModule_Create(&symnmfmodule);
 }

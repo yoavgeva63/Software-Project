@@ -1,14 +1,17 @@
+# Compiler and flags
 CC = gcc
 CFLAGS = -ansi -Wall -Wextra -Werror -pedantic-errors
-OBJS = symnmf.o
 
+# Rule to build the executable 'symnmf'
 all: symnmf
 
-symnmf: $(OBJS)
-	$(CC) $(CFLAGS) -o symnmf $(OBJS) -lm
+# The 'symnmf' executable depends on the C source file.
+# We add -lm to link the math library
+symnmf: symnmf.c symnmf.h
+	$(CC) $(CFLAGS) -o $@ $< -lm
 
-symnmf.o: symnmf.c symnmf.h
-	$(CC) $(CFLAGS) -c symnmf.c
-
+# A 'clean' rule to remove generated files
 clean:
-	rm -f symnmf $(OBJS)
+	rm -f symnmf *.o
+
+.PHONY: all clean

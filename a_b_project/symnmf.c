@@ -84,13 +84,13 @@ static double sim(const double *a, const double *b, int d) {
  */
 static void mm(int r, int m, int c, double **A, double **B, double **C) {
     int i, j, k;
-    double aik;
+    double curr;
     for(i=0; i<r; i++) for(j=0; j<c; j++) C[i][j] = 0.0;
     
     for (i = 0; i < r; i++) {
         for (k = 0; k < m; k++) {
-            aik = A[i][k];
-            for (j = 0; j < c; j++) C[i][j] += aik * B[k][j];
+            curr = A[i][k];
+            for (j = 0; j < c; j++) C[i][j] += curr * B[k][j];
         }
     }
 }

@@ -11,6 +11,8 @@ def load_data(path):
     """Load data from a file into a list of lists of floats."""
     try:
         return np.loadtxt(path, delimiter=',').tolist()
+    except ValueError:
+        return np.loadtxt(path).tolist()
     except Exception:
         error()
 
@@ -54,31 +56,24 @@ def main():
         error()
 
     try:
-        if goal == "sym":
-            A = symnmf_c.sym(data)
+        A = symnmf_c.sym(data)
+        if goal == "sym":            
             print_matrix(A)
-        elif goal == "ddg":
-            A = symnmf_c.sym(data)
+        else:
             D = symnmf_c.ddg(A)
-            print_matrix(D)
-        elif goal == "norm":
-            A = symnmf_c.sym(data)
-            D = symnmf_c.ddg(A)
-            W = symnmf_c.norm(A, D)
-            print_matrix(W)
-        elif goal == "symnmf":
-            if not (1 < k < n):
-                error()
-            
-            A = symnmf_c.sym(data)
-            D = symnmf_c.ddg(A)
-            W = symnmf_c.norm(A, D)
-            
-            avgW = avg_value_matrix(W)
-            H0 = init_H(k, n, avgW)
-            
-            H = symnmf_c.symnmf(W, H0, 300, 1e-4)
-            print_matrix(H)
+            if goal == "ddg":
+                print_matrix(D)
+            else:
+                W = symnmf_c.norm(A, D)
+                if goal == "norm":
+                    print_matrix(W)
+                else:            
+                    if not (0 < k < n):
+                        error()
+                    avgW = avg_value_matrix(W)
+                    H0 = init_H(k, n, avgW)                    
+                    H = symnmf_c.symnmf(W, H0, 300, 1e-4)
+                    print_matrix(H)
 
     except Exception:
         error()

@@ -75,6 +75,7 @@ static double sim(const double *a, const double *b, int d) {
 
 /**
  * @brief Performs matrix multiplication: C = A * B.
+ * This is the corrected standard (ijk) implementation.
  * @param r Rows of A.
  * @param m Columns of A / Rows of B.
  * @param c Columns of B.
@@ -84,13 +85,13 @@ static double sim(const double *a, const double *b, int d) {
  */
 static void mm(int r, int m, int c, double **A, double **B, double **C) {
     int i, j, k;
-    double curr;
-    for(i=0; i<r; i++) for(j=0; j<c; j++) C[i][j] = 0.0;
-    
     for (i = 0; i < r; i++) {
-        for (k = 0; k < m; k++) {
-            curr = A[i][k];
-            for (j = 0; j < c; j++) C[i][j] += curr * B[k][j];
+        for (j = 0; j < c; j++) {
+            double sum = 0.0;
+            for (k = 0; k < m; k++) {
+                sum += A[i][k] * B[k][j];
+            }
+            C[i][j] = sum;
         }
     }
 }
@@ -241,7 +242,6 @@ static SymnmfMatrices* alloc_symnmf_matrices(int n, int k) {
  */
 double** symnmf(double **W, double **H0, int n, int k, int maxIter, double eps) {
     int t;
-    double eps_sq = eps * eps;
     double **result_H;
     SymnmfMatrices *mats = alloc_symnmf_matrices(n, k);
 
@@ -252,7 +252,7 @@ double** symnmf(double **W, double **H0, int n, int k, int maxIter, double eps) 
     for (t = 0; t < maxIter; t++) {
         update_step(W, mats->H, mats->Hprev, mats->HT, mats->HHT,
                     mats->WH, mats->HHTH, n, k);
-        if (f_diff_sq(mats->H, mats->Hprev, n, k) < eps_sq) {
+        if (f_diff_sq(mats->H, mats->Hprev, n, k) < eps) {
             break;
         }
     }

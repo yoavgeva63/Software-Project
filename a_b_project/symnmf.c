@@ -10,7 +10,7 @@ typedef struct {
 
 /* Forward declarations for static helpers */
 static void mm(int r, int m, int c, double **A, double **B, double **C);
-static int run_goal(int goal, int n, int d, double **X);
+static int run_goal(int goal, int n, double **A);
 static int parse_goal(const char *g_str);
 
 void* error(void) {
@@ -191,7 +191,7 @@ static int count_shape(FILE *fp, int *outRows, int *outCols) {
 
 static double** load_csv(const char *path, int *outRows, int *outCols) {
     FILE *fp = fopen(path, "r");
-    char *line = NULL; size_t cap = 0;
+    char *line = NULL, *p, *end; size_t cap = 0;
     int i, j;
     double **X;
     if (!fp) return error();
@@ -200,7 +200,7 @@ static double** load_csv(const char *path, int *outRows, int *outCols) {
     if (!X) { fclose(fp); return NULL; }
     for (i = 0; i < *outRows; i++) {
         read_line(fp, &line, &cap);
-        char *p = line, *end;
+        p = line;
         for (j = 0; j < *outCols; j++) {
             X[i][j] = strtod(p, &end);
             p = (*end == ',') ? end + 1 : end;

@@ -152,8 +152,8 @@ def main():
     print(f"kmeans: {s_km:.4f}")
 
 
-if _name_ == "_main_":
+if __name__ == "__main__":
     try:
         main()
     except Exception:
-        error()
+        error()

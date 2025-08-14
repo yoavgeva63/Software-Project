@@ -1,33 +1,23 @@
+#include "symnmf.h"
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <math.h>
-#include "symnmf.h"
 
-/**
- * @brief A struct to hold all temporary matrices for the symNMF algorithm.
- */
 typedef struct {
     double **H, **Hprev, **HT, **HHT, **WH, **HHTH;
 } SymnmfMatrices;
 
-/* Forward declaration */
-static SymnmfMatrices* alloc_symnmf_matrices(int n, int k);
+/* Forward declarations for static helpers */
+static void mm(int r, int m, int c, double **A, double **B, double **C);
+static int run_goal(int goal, int n, int d, double **X);
+static int parse_goal(const char *g_str);
 
-/**
- * @brief Prints a unified error message to stderr.
- * @return Always returns NULL.
- */
 void* error(void) {
     fprintf(stderr, "An Error Has Occurred\n");
     return NULL;
 }
 
-/**
- * @brief Frees a 2D matrix of doubles. Safe to call on NULL.
- * @param m The matrix to free.
- * @param rows The number of rows in the matrix.
- */
 void free_matrix(double **m, int rows) {
     int i;
     if (!m) return;
@@ -35,12 +25,6 @@ void free_matrix(double **m, int rows) {
     free(m);
 }
 
-/**
- * @brief Allocates a 2D matrix of doubles, initialized to zero.
- * @param rows The number of rows to allocate.
- * @param cols The number of columns to allocate.
- * @return A pointer to the allocated matrix, or NULL on failure.
- */
 static double** alloc_mat(int rows, int cols) {
     int i;
     double **M = (double**)malloc(rows * sizeof(double*));
@@ -52,13 +36,6 @@ static double** alloc_mat(int rows, int cols) {
     return M;
 }
 
-/**
- * @brief Calculates the squared Euclidean distance between two vectors.
- * @param a The first vector.
- * @param b The second vector.
- * @param d The dimension of the vectors.
- * @return The squared Euclidean distance.
- */
 static double l2sq(const double *a, const double *b, int d) {
     int i;
     double s = 0.0, t;
@@ -66,47 +43,26 @@ static double l2sq(const double *a, const double *b, int d) {
     return s;
 }
 
-/**
- * @brief Calculates the similarity between two vectors using a Gaussian kernel.
- */
 static double sim(const double *a, const double *b, int d) {
     return exp(-0.5 * l2sq(a, b, d));
 }
 
-/**
- * @brief Performs matrix multiplication: C = A * B.
- * This is the corrected standard (ijk) implementation.
- * @param r Rows of A.
- * @param m Columns of A / Rows of B.
- * @param c Columns of B.
- * @param A Matrix A.
- * @param B Matrix B.
- * @param C The result matrix C.
- */
 static void mm(int r, int m, int c, double **A, double **B, double **C) {
     int i, j, k;
     for (i = 0; i < r; i++) {
         for (j = 0; j < c; j++) {
             double sum = 0.0;
-            for (k = 0; k < m; k++) {
-                sum += A[i][k] * B[k][j];
-            }
+            for (k = 0; k < m; k++) sum += A[i][k] * B[k][j];
             C[i][j] = sum;
         }
     }
 }
 
-/**
- * @brief Transposes a matrix: AT = A^T.
- */
 static void tr(int r, int c, double **A, double **AT) {
     int i, j;
     for (i = 0; i < r; i++) for (j = 0; j < c; j++) AT[j][i] = A[i][j];
 }
 
-/**
- * @brief Calculates the squared Frobenius norm of the difference between two matrices.
- */
 static double f_diff_sq(double **A, double **B, int r, int c) {
     int i, j;
     double s = 0.0, d;
@@ -114,10 +70,6 @@ static double f_diff_sq(double **A, double **B, int r, int c) {
     return s;
 }
 
-/**
- * @brief Computes the similarity matrix A from data points X.
- * @return The similarity matrix A, or NULL on failure.
- */
 double** sym(double **data, int n, int d) {
     int i, j;
     double **A = alloc_mat(n, n);
@@ -127,10 +79,6 @@ double** sym(double **data, int n, int d) {
     return A;
 }
 
-/**
- * @brief Computes the diagonal degree matrix D from the similarity matrix A.
- * @return The diagonal degree matrix D, or NULL on failure.
- */
 double** ddg(double **A, int n) {
     int i, j;
     double **D = alloc_mat(n, n);
@@ -143,147 +91,85 @@ double** ddg(double **A, int n) {
     return D;
 }
 
-/**
- * @brief Computes the normalized similarity matrix W = D^(-1/2) * A * D^(-1/2).
- * @return The normalized similarity matrix W, or NULL on failure.
- */
 double** norm(double **A, double **D, int n) {
     int i, j;
     double **W = alloc_mat(n, n);
     if (!W) return NULL;
-    for (i = 0; i < n; i++) {
-        for (j = 0; j < n; j++) {
-            double di = D[i][i];
-            double dj = D[j][j];
-            if (di > 0.0 && dj > 0.0) {
-                W[i][j] = A[i][j] / (sqrt(di) * sqrt(dj));
-            }
-        }
+    for (i = 0; i < n; i++) for (j = 0; j < n; j++) {
+        double di = D[i][i], dj = D[j][j];
+        if (di > 0.0 && dj > 0.0)
+            W[i][j] = A[i][j] / (sqrt(di) * sqrt(dj));
     }
     return W;
 }
 
-/**
- * @brief Copies matrix 'src' into 'dst'.
- */
 static void copy_mat(double **dst, double **src, int r, int c) {
     int i;
     for (i = 0; i < r; i++) memcpy(dst[i], src[i], c * sizeof(double));
 }
 
-/**
- * @brief Performs a single multiplicative update step for the H matrix.
- *
- * @param H The current H matrix to be updated (n x k).
- * @param Hprev A matrix to store the state of H before the update (n x k).
- * @param ... other params are temporary matrices for calculations.
- */
-static void update_step(double **W, double **H, double **Hprev, double **HT,
-                        double **HHT, double **WH, double **HHTH, int n, int k) {
-    int i, j;
+static void update_step(SymnmfMatrices *m, double **W, int n, int k) {
     const double beta = 0.5;
-
-    copy_mat(Hprev, H, n, k);
-    tr(n, k, H, HT);
-    mm(n, k, n, H, HT, HHT);
-    mm(n, n, k, W, H, WH);
-    mm(n, n, k, HHT, H, HHTH);
-    
+    int i, j;
+    copy_mat(m->Hprev, m->H, n, k);
+    tr(n, k, m->H, m->HT);
+    mm(n, k, n, m->H, m->HT, m->HHT);
+    mm(n, n, k, W, m->H, m->WH);
+    mm(n, n, k, m->HHT, m->H, m->HHTH);
     for (i = 0; i < n; i++) {
         for (j = 0; j < k; j++) {
-            double numer = WH[i][j];
-            double denom = HHTH[i][j];
-            if (denom > 1e-12) {
-                 H[i][j] = Hprev[i][j] * (1 - beta + beta * (numer / denom));
-            }
+            double denom = m->HHTH[i][j];
+            if (denom > 1e-12)
+                m->H[i][j] = m->Hprev[i][j] * (1-beta+beta * (m->WH[i][j]/denom));
         }
     }
 }
 
-/**
- * @brief Allocates a struct containing all temporary matrices for symNMF.
- *
- * @param n The number of data points (rows).
- * @param k The number of clusters (columns for H).
- * @return A pointer to the allocated SymnmfMatrices struct, or NULL on failure.
- */
 static SymnmfMatrices* alloc_symnmf_matrices(int n, int k) {
     SymnmfMatrices *mats = malloc(sizeof(SymnmfMatrices));
     if (!mats) { error(); return NULL; }
-
     mats->H = alloc_mat(n, k);
     mats->Hprev = alloc_mat(n, k);
     mats->HT = alloc_mat(k, n);
     mats->HHT = alloc_mat(n, n);
     mats->WH = alloc_mat(n, k);
     mats->HHTH = alloc_mat(n, k);
-
     if (!mats->H || !mats->Hprev || !mats->HT || !mats->HHT || !mats->WH || !mats->HHTH) {
-        free_matrix(mats->H, n);
-        free_matrix(mats->Hprev, n);
-        free_matrix(mats->HT, k);
-        free_matrix(mats->HHT, n);
-        free_matrix(mats->WH, n);
-        free_matrix(mats->HHTH, n);
-        free(mats);
-        return NULL;
+        free_matrix(mats->H, n); free_matrix(mats->Hprev, n);
+        free_matrix(mats->HT, k); free_matrix(mats->HHT, n);
+        free_matrix(mats->WH, n); free_matrix(mats->HHTH, n);
+        free(mats); return NULL;
     }
     return mats;
 }
 
-/**
- * @brief Performs the full Symmetric Non-negative Matrix Factorization algorithm.
- *
- * @param W The normalized similarity matrix (n x n).
- * @param H0 The initial H matrix (n x k).
- * @param maxIter The maximum number of iterations.
- * @param eps The convergence threshold.
- * @return The final optimized H matrix (n x k). The caller must free it.
- */
 double** symnmf(double **W, double **H0, int n, int k, int maxIter, double eps) {
     int t;
     double **result_H;
     SymnmfMatrices *mats = alloc_symnmf_matrices(n, k);
-
     if (!mats) return NULL;
-    
     copy_mat(mats->H, H0, n, k);
-    
     for (t = 0; t < maxIter; t++) {
-        update_step(W, mats->H, mats->Hprev, mats->HT, mats->HHT,
-                    mats->WH, mats->HHTH, n, k);
-        if (f_diff_sq(mats->H, mats->Hprev, n, k) < eps) {
-            break;
-        }
+        update_step(mats, W, n, k);
+        if (f_diff_sq(mats->H, mats->Hprev, n, k) < eps) break;
     }
-    
     result_H = mats->H;
-    free_matrix(mats->Hprev, n);
-    free_matrix(mats->HT, k);
-    free_matrix(mats->HHT, n);
-    free_matrix(mats->WH, n);
-    free_matrix(mats->HHTH, n);
-    free(mats);
-    
+    free_matrix(mats->Hprev, n); free_matrix(mats->HT, k);
+    free_matrix(mats->HHT, n); free_matrix(mats->WH, n);
+    free_matrix(mats->HHTH, n); free(mats);
     return result_H;
 }
 
-/*
- * Main function and file I/O for standalone execution
- */
+/* ================== Standalone C Executable Logic =================== */
 
-/**
- * @brief Reads a single line from a file, dynamically allocating memory.
- */
 static int read_line(FILE *fp, char **buf, size_t *cap) {
     size_t len = 0; int ch;
     if (!*buf || *cap == 0) {*cap=128; *buf=malloc(*cap); if(!*buf)return -1;}
     while ((ch = fgetc(fp)) != EOF && ch != '\n') {
         if (len + 1 >= *cap) {
-            size_t newcap = *cap * 2;
-            char *tmp = realloc(*buf, newcap);
+            char *tmp = realloc(*buf, (*cap) *= 2);
             if (!tmp) return -1;
-            *buf = tmp; *cap = newcap;
+            *buf = tmp;
         }
         (*buf)[len++] = ch;
     }
@@ -291,9 +177,6 @@ static int read_line(FILE *fp, char **buf, size_t *cap) {
     return (len == 0 && ch == EOF) ? -1 : (int)len;
 }
 
-/**
- * @brief Reads a file once to determine its dimensions (rows, cols).
- */
 static int count_shape(FILE *fp, int *outRows, int *outCols) {
     char *line = NULL; size_t cap = 0; int len, rows = 0, cols = 0, i;
     if ((len = read_line(fp, &line, &cap)) < 0) { free(line); return 0; }
@@ -306,104 +189,72 @@ static int count_shape(FILE *fp, int *outRows, int *outCols) {
     return 1;
 }
 
-/**
- * @brief Parses a single line of comma-separated doubles.
- */
-static int parse_row(char *line, int cols, double *out) {
-    int j; char *p = line, *end;
-    for (j = 0; j < cols; j++) {
-        out[j] = strtod(p, &end);
-        if (end == p) return 0;
-        p = (*end == ',') ? end + 1 : end;
-    }
-    return 1;
-}
-
-/**
- * @brief Loads a CSV file into a 2D matrix of doubles.
- */
 static double** load_csv(const char *path, int *outRows, int *outCols) {
     FILE *fp = fopen(path, "r");
     char *line = NULL; size_t cap = 0;
-    int len, rows, cols, i;
+    int i, j;
     double **X;
-
     if (!fp) return error();
-    if (!count_shape(fp, &rows, &cols)) { fclose(fp); return error(); }
-    X = alloc_mat(rows, cols);
+    if (!count_shape(fp, outRows, outCols)) { fclose(fp); return error(); }
+    X = alloc_mat(*outRows, *outCols);
     if (!X) { fclose(fp); return NULL; }
-
-    for (i = 0; i < rows; i++) {
-        len = read_line(fp, &line, &cap);
-        if (len < 0 || !parse_row(line, cols, X[i])) {
-            free(line); free_matrix(X, rows); fclose(fp); return error();
+    for (i = 0; i < *outRows; i++) {
+        read_line(fp, &line, &cap);
+        char *p = line, *end;
+        for (j = 0; j < *outCols; j++) {
+            X[i][j] = strtod(p, &end);
+            p = (*end == ',') ? end + 1 : end;
         }
     }
     free(line); fclose(fp);
-    *outRows = rows; *outCols = cols;
     return X;
 }
 
-/**
- * @brief Prints a 2D matrix to stdout, formatted to 4 decimal places.
- */
 static void print_matrix(double **M, int rows, int cols) {
     int i, j;
     for (i = 0; i < rows; i++) {
-        for (j = 0; j < cols; j++) {
+        for (j = 0; j < cols; j++)
             printf("%.4f%s", M[i][j], (j + 1 < cols) ? "," : "");
-        }
         putchar('\n');
     }
 }
 
-/**
- * @brief Parses the goal string from command-line arguments.
- */
-static int parse_goal(const char *g) {
-    if (strcmp(g, "sym")  == 0) return 0;
-    if (strcmp(g, "ddg")  == 0) return 1;
-    if (strcmp(g, "norm") == 0) return 2;
+static int parse_goal(const char *g_str) {
+    if (strcmp(g_str, "sym") == 0) return 0;
+    if (strcmp(g_str, "ddg") == 0) return 1;
+    if (strcmp(g_str, "norm") == 0) return 2;
     return -1;
 }
 
-/**
- * @brief Main entry point for the standalone C executable.
- *
- * @param argc The number of command-line arguments.
- * @param argv An array of command-line argument strings.
- * @return 0 on success, 1 on failure.
- */
+static int run_goal(int goal, int n, double **A) {
+    double **D, **W;
+    if (goal == 0) { print_matrix(A, n, n); return 1; }
+    D = ddg(A, n);
+    if (!D) return 0;
+    if (goal == 1) { print_matrix(D, n, n); free_matrix(D, n); return 1; }
+    W = norm(A, D, n);
+    free_matrix(D, n);
+    if (!W) return 0;
+    print_matrix(W, n, n);
+    free_matrix(W, n);
+    return 1;
+}
+
 int main(int argc, char **argv) {
-    int goal, n, d;
-    double **X, **A, **D, **W;
-    
+    int goal, n = 0, d = 0, res = 1; /* FIX: Initialize n,d */
+    double **X, **A;
     if (argc != 3) { error(); return 1; }
     goal = parse_goal(argv[1]);
     if (goal == -1) { error(); return 1; }
-
     X = load_csv(argv[2], &n, &d);
     if (!X) return 1;
-
     A = sym(X, n, d);
-    if (!A) { free_matrix(X, n); return 1; }
-    if (goal == 0) { print_matrix(A, n, n); }
-
-    if (goal >= 1) {
-        D = ddg(A, n);
-        if (!D) { free_matrix(A, n); free_matrix(X, n); return 1; }
-        if (goal == 1) { print_matrix(D, n, n); }
-        
-        if (goal == 2) {
-            W = norm(A, D, n);
-            if (!W) { free_matrix(D,n); free_matrix(A,n); free_matrix(X,n); return 1; }
-            print_matrix(W, n, n);
-            free_matrix(W, n);
-        }
-        free_matrix(D, n);
+    if (!A) {
+        res = 0;
+    } else {
+        if (!run_goal(goal, n, A)) res = 0;
+        free_matrix(A, n);
     }
-
-    free_matrix(A, n);
     free_matrix(X, n);
-    return 0;
+    return res ? 0 : 1;
 }

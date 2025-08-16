@@ -119,7 +119,7 @@ static PyObject* py_norm(PyObject *self, PyObject *args) {
     int nA, nA_cols, nD, nD_cols;
     if (!PyArg_ParseTuple(args, "OO", &py_A, &py_D)) return py_error();
     if (!py_to_c_matrix(py_A, &A, &nA, &nA_cols) || nA != nA_cols) {
-        if (A) free_matrix(A, nA); /* FIX: Braces not needed, logic is simple */
+        if (A) free_matrix(A, nA); 
         return py_error();
     }
     if (!py_to_c_matrix(py_D, &D, &nD, &nD_cols) || nD != nD_cols || nA != nD) {
@@ -158,11 +158,13 @@ static PyObject* py_symnmf(PyObject *self, PyObject *args) {
     }
     n = n_W_rows;
     if (n != n_H0_rows) {
-        free_matrix(W, n); free_matrix(H0, n_H0_rows);
+        free_matrix(W, n);
+        free_matrix(H0, n_H0_rows);
         return py_error();
     }
     H = symnmf(W, H0, n, k, maxIter, eps);
-    free_matrix(W, n); free_matrix(H0, n);
+    free_matrix(W, n);
+    free_matrix(H0, n_H0_rows);
     if (!H) return py_error();
     py_res = c_to_py_matrix(H, n, k);
     free_matrix(H, n);
@@ -186,8 +188,8 @@ static struct PyModuleDef symnmfmodule = {
 };
 
 /* PyInit_symnmf
- * Purpose: module initialization entry point for Python ≥3.
- * Returns: new module object, or NULL on failure (exception set by CPython).
+ * Purpose: module initialization entry point for Python.
+ * Returns: new module object, or NULL on failure.
  */
 PyMODINIT_FUNC PyInit_symnmf(void) {
     return PyModule_Create(&symnmfmodule);

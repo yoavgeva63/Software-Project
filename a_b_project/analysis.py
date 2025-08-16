@@ -52,11 +52,9 @@ def silhouette_score(data, labels):
     """
     n = len(data)
     D = pairwise_distances(data)
-    unique_labels = np.unique(labels)
-    
+    unique_labels = np.unique(labels)    
     if len(unique_labels) <= 1:
         return 0.0
-
     # Create a dictionary to hold indices for each cluster
     clusters = {label: np.where(labels == label)[0] for label in unique_labels}
     
@@ -64,23 +62,19 @@ def silhouette_score(data, labels):
     for i in range(n):
         my_cluster_label = labels[i]
         my_cluster_indices = clusters[my_cluster_label]
-
         # Calculate a(i) - mean intra-cluster distance
         if len(my_cluster_indices) <= 1:
             a = 0.0
         else:
             a = np.mean([D[i, j] for j in my_cluster_indices if i != j])
-
         # Calculate b(i) - mean nearest-cluster distance
         min_other_dist = float('inf')
         for label, indices in clusters.items():
-            if label == my_cluster_label:
-                continue
+            if label == my_cluster_label: continue
             other_dist = np.mean([D[i, j] for j in indices])
             if other_dist < min_other_dist:
                 min_other_dist = other_dist
-        b = min_other_dist
-        
+        b = min_other_dist        
         # Calculate silhouette coefficient for point i
         if max(a, b) == 0:
             s_i = 0.0

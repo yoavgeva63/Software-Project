@@ -4,7 +4,7 @@
 /* ============================ Core API Functions ============================ */
 
 /**
- * Computes the similarity matrix A from data points X.
+ * Computes the similarity matrix A from data points data.
  * @param data The input data matrix (n x d).
  * @param n The number of data points.
  * @param d The dimension of each data point.
@@ -53,7 +53,7 @@ void free_matrix(double **matrix, int num_rows);
 
 /**
  * Prints a unified error message to stderr.
- * @return Always returns NULL, suitable for chained returns.
+ * @return Always returns NULL.
  */
 void* error(void);
 

@@ -8,9 +8,8 @@ typedef struct {
     double **H, **Hprev, **HT, **HHT, **WH, **HHTH;
 } SymnmfMatrices;
 
-/* mm
- * Matrix multiply: C = A (r×m) · B (m×c).
- * No allocation; assumes C is preallocated r×c.
+/* 
+ * Declarations
  */
 static void mm(int r, int m, int c, double **A, double **B, double **C);
 static int run_goal(int goal, int n, double **A);
@@ -32,7 +31,8 @@ void* error(void) {
 void free_matrix(double **m, int rows) {
     int i;
     if (!m) return;
-    for (i = 0; i < rows; i++) free(m[i]);
+    for (i = 0; i < rows; i++) 
+        free(m[i]);
     free(m);
 }
 
@@ -46,7 +46,10 @@ static double** alloc_mat(int rows, int cols) {
     if (!M) return error();
     for (i = 0; i < rows; i++) {
         M[i] = (double*)calloc(cols, sizeof(double));
-        if (!M[i]) { free_matrix(M, i); return error(); }
+        if (!M[i]) { 
+            free_matrix(M, i); 
+            return error(); 
+        }
     }
     return M;
 }
@@ -58,7 +61,10 @@ static double** alloc_mat(int rows, int cols) {
 static double l2sq(const double *a, const double *b, int d) {
     int i;
     double s = 0.0, t;
-    for (i = 0; i < d; i++) { t = a[i] - b[i]; s += t * t; }
+    for (i = 0; i < d; i++) { 
+        t = a[i] - b[i];
+        s += t * t; 
+    }
     return s;
 }
 
@@ -78,7 +84,8 @@ static void mm(int r, int m, int c, double **A, double **B, double **C) {
     for (i = 0; i < r; i++) {
         for (j = 0; j < c; j++) {
             double sum = 0.0;
-            for (k = 0; k < m; k++) sum += A[i][k] * B[k][j];
+            for (k = 0; k < m; k++)
+                sum += A[i][k] * B[k][j];
             C[i][j] = sum;
         }
     }
@@ -90,7 +97,9 @@ static void mm(int r, int m, int c, double **A, double **B, double **C) {
  */
 static void tr(int r, int c, double **A, double **AT) {
     int i, j;
-    for (i = 0; i < r; i++) for (j = 0; j < c; j++) AT[j][i] = A[i][j];
+    for (i = 0; i < r; i++)
+        for (j = 0; j < c; j++)
+            AT[j][i] = A[i][j];
 }
 
 /* f_diff_sq
@@ -100,7 +109,11 @@ static void tr(int r, int c, double **A, double **AT) {
 static double f_diff_sq(double **A, double **B, int r, int c) {
     int i, j;
     double s = 0.0, d;
-    for (i = 0; i < r; i++) for (j = 0; j < c; j++) { d = A[i][j] - B[i][j]; s += d * d; }
+    for (i = 0; i < r; i++)
+        for (j = 0; j < c; j++) {
+            d = A[i][j] - B[i][j]; 
+            s += d * d; 
+        }
     return s;
 }
 
@@ -195,10 +208,14 @@ static SymnmfMatrices* alloc_symnmf_matrices(int n, int k) {
     mats->WH = alloc_mat(n, k);
     mats->HHTH = alloc_mat(n, k);
     if (!mats->H || !mats->Hprev || !mats->HT || !mats->HHT || !mats->WH || !mats->HHTH) {
-        free_matrix(mats->H, n); free_matrix(mats->Hprev, n);
-        free_matrix(mats->HT, k); free_matrix(mats->HHT, n);
-        free_matrix(mats->WH, n); free_matrix(mats->HHTH, n);
-        free(mats); return NULL;
+        free_matrix(mats->H, n);
+        free_matrix(mats->Hprev, n);
+        free_matrix(mats->HT, k);
+        free_matrix(mats->HHT, n);
+        free_matrix(mats->WH, n);
+        free_matrix(mats->HHTH, n);
+        free(mats);
+        return NULL;
     }
     return mats;
 }
@@ -260,28 +277,28 @@ static int count_shape(FILE *fp, int *outRows, int *outCols) {
 }
 
 /* load_csv
- * Loads a CSV of doubles into an n×d matrix X; detects shape first.
- * Returns allocated X; on error prints and returns NULL.
+ * Loads a CSV of doubles into an n×d matrix data; detects shape first.
+ * Returns allocated data; on error prints and returns NULL.
  */
 static double** load_csv(const char *path, int *outRows, int *outCols) {
     FILE *fp = fopen(path, "r");
     char *line = NULL, *p, *end; size_t cap = 0;
     int i, j;
-    double **X;
+    double **data;
     if (!fp) return error();
     if (!count_shape(fp, outRows, outCols)) { fclose(fp); return error(); }
-    X = alloc_mat(*outRows, *outCols);
-    if (!X) { fclose(fp); return NULL; }
+    data = alloc_mat(*outRows, *outCols);
+    if (!data) { fclose(fp); return NULL; }
     for (i = 0; i < *outRows; i++) {
         read_line(fp, &line, &cap);
         p = line;
         for (j = 0; j < *outCols; j++) {
-            X[i][j] = strtod(p, &end);
+            data[i][j] = strtod(p, &end);
             p = (*end == ',') ? end + 1 : end;
         }
     }
     free(line); fclose(fp);
-    return X;
+    return data;
 }
 
 /* print_matrix
@@ -331,20 +348,20 @@ static int run_goal(int goal, int n, double **A) {
  * Loads CSV → X, builds A=sym(X), runs goal, prints result, returns 0/1.
  */
 int main(int argc, char **argv) {
-    int goal, n = 0, d = 0, res = 1; /* FIX: Initialize n,d */
-    double **X, **A;
+    int goal, n = 0, d = 0, res = 1;
+    double **data, **A;
     if (argc != 3) { error(); return 1; }
     goal = parse_goal(argv[1]);
     if (goal == -1) { error(); return 1; }
-    X = load_csv(argv[2], &n, &d);
-    if (!X) return 1;
-    A = sym(X, n, d);
+    data = load_csv(argv[2], &n, &d);
+    if (!data) return 1;
+    A = sym(data, n, d);
     if (!A) {
         res = 0;
     } else {
         if (!run_goal(goal, n, A)) res = 0;
         free_matrix(A, n);
     }
-    free_matrix(X, n);
-    return res ? 0 : 1;
+    free_matrix(data, n);
+    return !res;
 }

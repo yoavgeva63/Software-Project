@@ -6,7 +6,7 @@ CFLAGS = -ansi -Wall -Wextra -Werror -pedantic-errors
 all: symnmf
 
 # The 'symnmf' executable depends on the C source file.
-# We add -lm for the math library
+# -lm for the math library
 symnmf: symnmf.c symnmf.h
 	$(CC) $(CFLAGS) -o $@ $< -lm
 

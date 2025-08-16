@@ -103,7 +103,7 @@ static void tr(int r, int c, double **A, double **AT) {
 }
 
 /* f_diff_sq
- * Frobenius squared difference: sum_{i,j} (A_ij - B_ij)^2 over r×c.
+ * Frobenius squared difference over r×c.
  * Used for convergence check.
  */
 static double f_diff_sq(double **A, double **B, int r, int c) {

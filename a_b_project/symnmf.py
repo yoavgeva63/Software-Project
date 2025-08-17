@@ -10,13 +10,11 @@ def error():
 def load_data(path):
     """
     Loads data from a text file.
-    Handles both comma-delimited and whitespace-delimited files.
     """
     try:
-        return np.loadtxt(path, delimiter=',').tolist()
+        return np.loadtxt(path, delimiter=',', ndmin=2).tolist()
     except Exception:
-        # Fallback for files without commas (e.g., single column)
-        return np.loadtxt(path).tolist()
+        error()
 
 def print_matrix(M):
     """Prints a matrix with 4 decimal places, comma-separated."""

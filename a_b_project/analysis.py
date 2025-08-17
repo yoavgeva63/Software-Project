@@ -1,8 +1,8 @@
 import sys
 import numpy as np
-from math import sqrt
 import symnmf as symnmf_c
 from kmeans import kmeans_algorithm
+from sklearn.metrics import silhouette_score
 
 # Constants declaration
 MAX_ITER = 300
@@ -16,7 +16,8 @@ def error():
 def load_data(path):
     """Load data from a file into a numpy array."""
     try:
-        return np.loadtxt(path, delimiter=',')
+        # Use atleast_2d to handle single-column files correctly
+        return np.atleast_2d(np.loadtxt(path, delimiter=','))
     except Exception:
         error()
 
@@ -33,56 +34,6 @@ def init_H(k, n, avgW, seed=1234):
     np.random.seed(seed)
     scale = 2 * np.sqrt(avgW / k)
     return np.random.uniform(0, scale, size=(n, k)).tolist()
-
-# Implementation of silhouette_score
-def pairwise_distances(data):
-    """Return full n×n Euclidean distance matrix."""
-    n = data.shape[0]
-    D = np.zeros((n, n))
-    for i in range(n):
-        for j in range(i + 1, n):
-            dist = np.linalg.norm(data[i] - data[j])
-            D[i, j] = D[j, i] = dist
-    return D
-
-def silhouette_score(data, labels):
-    """
-    Manual implementation of mean silhouette score (Euclidean).
-    s(i)=(b-a)/max(a,b). Returns float in [-1,1].
-    """
-    n = len(data)
-    D = pairwise_distances(data)
-    unique_labels = np.unique(labels)    
-    if len(unique_labels) <= 1:
-        return 0.0
-    # Create a dictionary to hold indices for each cluster
-    clusters = {label: np.where(labels == label)[0] for label in unique_labels}
-    
-    silhouette_vals = []
-    for i in range(n):
-        my_cluster_label = labels[i]
-        my_cluster_indices = clusters[my_cluster_label]
-        # Calculate a(i) - mean intra-cluster distance
-        if len(my_cluster_indices) <= 1:
-            a = 0.0
-        else:
-            a = np.mean([D[i, j] for j in my_cluster_indices if i != j])
-        # Calculate b(i) - mean nearest-cluster distance
-        min_other_dist = float('inf')
-        for label, indices in clusters.items():
-            if label == my_cluster_label: continue
-            other_dist = np.mean([D[i, j] for j in indices])
-            if other_dist < min_other_dist:
-                min_other_dist = other_dist
-        b = min_other_dist        
-        # Calculate silhouette coefficient for point i
-        if max(a, b) == 0:
-            s_i = 0.0
-        else:
-            s_i = (b - a) / max(a, b)
-        silhouette_vals.append(s_i)
-        
-    return np.mean(silhouette_vals)
 
 def symnmf_labels(data, k):
     """Get cluster labels from the SymNMF algorithm."""
@@ -137,9 +88,9 @@ def main():
     nmf_labs = symnmf_labels(data, k)
     km_labs = kmeans_labels(data, k)
     
-    # Calculate silhouette scores
+    # Calculate silhouette scores using sklearn
     s_nmf = silhouette_score(data, nmf_labs)
-    s_km = silhouette_score(data, np.array(km_labs))
+    s_km = silhouette_score(data, km_labs)
     
     # Print results
     print(f"nmf: {s_nmf:.4f}")

@@ -16,8 +16,7 @@ def error():
 def load_data(path):
     """Load data from a file into a numpy array."""
     try:
-        # Use atleast_2d to handle single-column files correctly
-        return np.atleast_2d(np.loadtxt(path, delimiter=','))
+        return np.loadtxt(path, delimiter=',', ndmin=2)
     except Exception:
         error()
 
@@ -38,7 +37,7 @@ def init_H(k, n, avgW, seed=1234):
 def symnmf_labels(data, k):
     """Get cluster labels from the SymNMF algorithm."""
     try:
-        data_list = data.tolist()
+        data_list = data.tolist() # Convert np.array to list for C extension
         A = symnmf_c.sym(data_list)
         D = symnmf_c.ddg(A)
         W = symnmf_c.norm(A, D)
@@ -55,7 +54,7 @@ def symnmf_labels(data, k):
 def kmeans_labels(data, k):
     """Get cluster labels from the K-Means algorithm."""
     try:
-        data_list = data.tolist()
+        data_list = data.tolist() # Convert np.array to list for kmeans
         centroids = kmeans_algorithm(k, data_list, MAX_ITER, EPS)
         
         centroids_np = np.array(centroids)

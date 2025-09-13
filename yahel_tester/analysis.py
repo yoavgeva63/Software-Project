@@ -1,6 +1,6 @@
 import sys
 import numpy as np
-import symnmf_module as symnmf_c
+import symnmf as symnmf_c
 from kmeans import kmeans_algorithm
 from sklearn.metrics import silhouette_score
 

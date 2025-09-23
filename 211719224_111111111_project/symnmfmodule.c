@@ -182,15 +182,15 @@ static PyMethodDef SymNMFMethods[] = {
     {NULL, NULL, 0, NULL}
 };
 
-/* Module definition: name 'symnmf', brief module doc, no per-interpreter state. */
+/* Module definition: name 'symnmf_module', brief module doc, no per-interpreter state. */
 static struct PyModuleDef symnmfmodule = {
-    PyModuleDef_HEAD_INIT, "symnmf", "C extension for SymNMF", -1, SymNMFMethods
+    PyModuleDef_HEAD_INIT, "symnmf_module", "C extension for SymNMF", -1, SymNMFMethods
 };
 
-/* PyInit_symnmf
+/* PyInit_symnmf_module
  * Purpose: module initialization entry point for Python.
  * Returns: new module object, or NULL on failure.
  */
-PyMODINIT_FUNC PyInit_symnmf(void) {
+PyMODINIT_FUNC PyInit_symnmf_module(void) {
     return PyModule_Create(&symnmfmodule);
 }

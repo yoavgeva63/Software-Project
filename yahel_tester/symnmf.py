@@ -1,6 +1,6 @@
 import sys
 import numpy as np
-import symnmf as symnmf_c
+import symnmf_module as symnmf_c
 
 def error():
     """Prints a unified error message and exits the program."""
